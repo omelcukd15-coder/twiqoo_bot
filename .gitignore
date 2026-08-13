@@ -27,8 +27,6 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#   Usually these files are written by a python script from a template
-#   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
@@ -216,6 +214,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
 # ============================================
 # ДЛЯ ВАШЕГО БОТА TWIQO
 # ============================================
@@ -241,17 +240,20 @@ fsm_states.json
 *_backup_*.db
 *_backup_*.json
 
-# Файлы IDE (уже частично есть, но добавим для полноты)
+# Файлы IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Временные файлы Python
+# Временные файлы
 *.tmp
 *.temp
 
 # Файлы отладки
 debug.log
 error.log
+
+# Render файлы (создаются автоматически)
+data/
