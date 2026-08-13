@@ -216,3 +216,42 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# ============================================
+# ДЛЯ ВАШЕГО БОТА TWIQO
+# ============================================
+
+# База данных SQLite (содержит ВСЕ данные пользователей!)
+twiqo.db
+twiqo.db-journal
+*.db
+*.db-journal
+
+# FSM состояния (временные данные пользователей)
+fsm_states.json
+
+# Файл с токеном бота
+.env
+.env.local
+.env.*.local
+
+# Логи
+*.log
+
+# Бэкапы базы данных
+*_backup_*.db
+*_backup_*.json
+
+# Файлы IDE (уже частично есть, но добавим для полноты)
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Временные файлы Python
+*.tmp
+*.temp
+
+# Файлы отладки
+debug.log
+error.log
