@@ -14,8 +14,7 @@ from aiogram.fsm.storage.base import BaseStorage, StorageKey
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardRemove,
-    ChatMember
+    ReplyKeyboardRemove
 )
 from dotenv import load_dotenv
 
@@ -34,10 +33,9 @@ load_dotenv()
 # ============================================================
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_IDS = [8541378272]
+ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '8541378272').split(',')]
+CHANNEL_ID = os.getenv('CHANNEL_USERNAME', '@twiqo_channel')
 MSK_TZ = pytz.timezone('Europe/Moscow')
-CHANNEL_LINK = "t.me/twiqo_channel"  # Ссылка на канал
-CHANNEL_ID = "@twiqo_channel"  # ID канала для проверки подписки
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден")
@@ -82,7 +80,7 @@ class User(Base):
     looking_for_gender = Column(String(50))
     language = Column(String(10), default='ru')
     views_count = Column(Integer, default=0)
-    profiles_viewed_count = Column(Integer, default=0)  # Счетчик просмотренных анкет
+    profiles_viewed_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)
 
@@ -175,7 +173,12 @@ class WelcomeSettings(Base):
 # 3. НАСТРОЙКА БД
 # ============================================================
 
-DATABASE_URL = "sqlite+aiosqlite:///twiqo.db"
+# Для Render используем DATA_DIR, если есть
+DATA_DIR = os.getenv('DATA_DIR', '.')
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, 'twiqo.db')
+DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -262,12 +265,10 @@ async def send_to_moderation(user_id: int, changed_field: str = ""):
         if not user:
             return
         
-        # Меняем статус на PENDING, если анкета была одобрена или скрыта
         if user.status in [ProfileStatus.APPROVED, ProfileStatus.HIDDEN]:
             user.status = ProfileStatus.PENDING
             await session.commit()
             
-            # Уведомляем админов
             for admin in ADMIN_IDS:
                 try:
                     text = f"🔄 Изменение анкеты!\n"
@@ -282,7 +283,6 @@ async def send_to_moderation(user_id: int, changed_field: str = ""):
                 except Exception as e:
                     logger.error(f"Ошибка уведомления админа: {e}")
 
-            # Уведомляем пользователя
             try:
                 await bot.send_message(
                     user.telegram_id, 
@@ -308,16 +308,15 @@ async def require_channel_subscription(message: types.Message, user: User) -> bo
         await update_user(user)
         return True
     
-    # Показываем сообщение с требованием подписки
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://{CHANNEL_LINK}")],
+        [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://{CHANNEL_ID.replace('@', 't.me/')}")],
         [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscribe")]
     ])
     
     text = (
         "📢 **Подпишись на наш канал!**\n\n"
         "Чтобы продолжить пользоваться ботом, нужно подписаться на канал Twiqo:\n"
-        f"👉 [{CHANNEL_LINK}](https://{CHANNEL_LINK})\n\n"
+        f"👉 [{CHANNEL_ID}](https://{CHANNEL_ID.replace('@', 't.me/')})\n\n"
         "🔥 **Почему стоит подписаться?**\n"
         "• Первыми узнавать о новостях и обновлениях\n"
         "• Твоя анкета будет выходить на 1 место в поиске\n"
@@ -517,7 +516,6 @@ async def start_cmd(message: types.Message, state: FSMContext):
         await state.set_state(RegStates.photo)
         await message.answer("📸 Отправь фото", reply_markup=back_kb())
     else:
-        # Проверяем подписку на канал
         is_subscribed = await check_channel_subscription(user.telegram_id)
         if is_subscribed and not user.is_channel_subscriber:
             user.is_channel_subscriber = True
@@ -799,19 +797,18 @@ async def reg_preview_action(message: types.Message, state: FSMContext):
 
         await state.clear()
         
-        # Сообщение о модерации с призывом подписаться
         text = (
             "⏳ Анкета отправлена на модерацию!\n\n"
             "📢 **Подпишись на наш канал, чтобы:**\n"
             "• Первым узнать о модерации ✅\n"
             "• Твоя анкета вышла в ТОП 🔥\n"
             "• Следить за новостями и обновлениями\n\n"
-            f"👉 [{CHANNEL_LINK}](https://{CHANNEL_LINK})\n\n"
+            f"👉 [{CHANNEL_ID}](https://{CHANNEL_ID.replace('@', 't.me/')})\n\n"
             "После подписки нажми «✅ Проверить подписку»"
         )
         
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://{CHANNEL_LINK}")],
+            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://{CHANNEL_ID.replace('@', 't.me/')}")],
             [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscribe")]
         ])
         
@@ -851,7 +848,6 @@ async def check_subscribe(callback: types.CallbackQuery):
         )
         await callback.answer("✅ Подписка подтверждена!")
         
-        # Если пользователь ещё не видел главное меню
         if user.status == ProfileStatus.PENDING:
             await callback.message.answer(
                 "⏳ Жди модерации анкеты. Мы уведомим тебя!",
@@ -861,12 +857,12 @@ async def check_subscribe(callback: types.CallbackQuery):
             await callback.message.answer("Главное меню", reply_markup=main_kb(user))
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://{CHANNEL_LINK}")],
+            [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://{CHANNEL_ID.replace('@', 't.me/')}")],
             [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscribe")]
         ])
         await callback.message.edit_text(
             "❌ Ты ещё не подписался на канал!\n\n"
-            f"👉 Подпишись: [{CHANNEL_LINK}](https://{CHANNEL_LINK})\n\n"
+            f"👉 Подпишись: [{CHANNEL_ID}](https://{CHANNEL_ID.replace('@', 't.me/')})\n\n"
             "После подписки нажми «✅ Проверить подписку»",
             reply_markup=kb,
             parse_mode="Markdown",
@@ -974,15 +970,27 @@ async def rework_reason(message: types.Message, state: FSMContext):
 # ============================================================
 
 @dp.message(F.text == "🔎 Найти людей")
-async def find_people(message: types.Message):
+async def find_people(message: types.Message, state: FSMContext):
     user = await get_user(message.from_user.id)
-    if not user or user.status != ProfileStatus.APPROVED:
-        await message.answer("Анкета не одобрена")
+    if not user:
+        await message.answer("Сначала создай анкету через /start")
+        return
+    
+    if user.status != ProfileStatus.APPROVED:
+        status_text = {
+            'pending': '⏳ на модерации',
+            'rejected': '❌ отклонена',
+            'hidden': '👻 скрыта'
+        }.get(user.status, 'неизвестен')
+        await message.answer(f"❌ Анкета не одобрена. Статус: {status_text}")
         return
     
     # Проверяем подписку на канал
     if not await require_channel_subscription(message, user):
         return
+    
+    # Сбрасываем FSM состояние
+    await state.clear()
     
     await search_next(message, user)
 
@@ -1019,23 +1027,19 @@ async def search_next(message: types.Message, user: User):
         if user.city:
             query = query.where(User.city == user.city)
 
-        # Подписчики канала в приоритете
         query = query.order_by(User.is_channel_subscriber.desc()).limit(50)
         result = await session.execute(query)
         profiles = result.scalars().all()
 
         if profiles:
-            # Увеличиваем счетчик просмотренных анкет
+            # Увеличиваем счётчик просмотренных анкет
             user.profiles_viewed_count += 1
             await session.commit()
             
             # Проверяем, не набрал ли пользователь 10 просмотров
             if user.profiles_viewed_count >= 10 and not user.is_channel_subscriber:
-                # Сбрасываем счетчик
                 user.profiles_viewed_count = 0
                 await session.commit()
-                
-                # Требуем подписки
                 await require_channel_subscription(message, user)
                 return
             
@@ -1181,7 +1185,7 @@ async def stop_search(callback: types.CallbackQuery):
 
 
 # ============================================================
-# 14. РЕДАКТИРОВАНИЕ АНКЕТЫ (С ОТПРАВКОЙ НА МОДЕРАЦИЮ)
+# 14. РЕДАКТИРОВАНИЕ
 # ============================================================
 
 async def edit_start(message: types.Message, state: FSMContext, user: User):
@@ -1245,8 +1249,6 @@ async def edit_choose(message: types.Message, state: FSMContext):
             await state.set_state(EditStates.desc)
 
 
-# Обработчики для каждого поля редактирования с отправкой на модерацию
-
 @dp.message(EditStates.photo)
 async def edit_photo(message: types.Message, state: FSMContext):
     if message.text == "🔙 Назад":
@@ -1264,8 +1266,6 @@ async def edit_photo(message: types.Message, state: FSMContext):
     await update_user(user)
     await state.clear()
     await message.answer("✅ Фото обновлено", reply_markup=main_kb(user))
-    
-    # Отправляем на модерацию
     await send_to_moderation(user.id, "Фото")
 
 
@@ -1284,7 +1284,6 @@ async def edit_name(message: types.Message, state: FSMContext):
     await update_user(user)
     await state.clear()
     await message.answer(f"✅ Имя: {message.text}", reply_markup=main_kb(user))
-    
     await send_to_moderation(user.id, "Имя")
 
 
@@ -1305,7 +1304,6 @@ async def edit_age(message: types.Message, state: FSMContext):
         await update_user(user)
         await state.clear()
         await message.answer(f"✅ Возраст: {age}", reply_markup=main_kb(user))
-        
         await send_to_moderation(user.id, "Возраст")
     except ValueError:
         await message.answer("Введи число", reply_markup=back_kb())
@@ -1327,7 +1325,6 @@ async def edit_gender(message: types.Message, state: FSMContext):
     await update_user(user)
     await state.clear()
     await message.answer("✅ Пол обновлен", reply_markup=main_kb(user))
-    
     await send_to_moderation(user.id, "Пол")
 
 
@@ -1346,7 +1343,6 @@ async def edit_city(message: types.Message, state: FSMContext):
     await update_user(user)
     await state.clear()
     await message.answer(f"✅ Город: {message.text}", reply_markup=main_kb(user))
-    
     await send_to_moderation(user.id, "Город")
 
 
@@ -1365,7 +1361,6 @@ async def edit_desc(message: types.Message, state: FSMContext):
     await update_user(user)
     await state.clear()
     await message.answer("✅ Описание обновлено", reply_markup=main_kb(user))
-    
     await send_to_moderation(user.id, "Описание")
 
 
@@ -1397,7 +1392,6 @@ async def edit_interests(message: types.Message, state: FSMContext):
 
         await state.clear()
         await message.answer("✅ Интересы обновлены", reply_markup=main_kb(user))
-        
         await send_to_moderation(user.id, "Интересы")
         return
 
@@ -1971,7 +1965,7 @@ async def pro_handler(message: types.Message):
         "• Безлимитные просмотры\n"
         "• Расширенный поиск\n"
         "• Специальный значок\n\n"
-        f"📢 Подпишись на канал, чтобы узнать первым: [{CHANNEL_LINK}](https://{CHANNEL_LINK})",
+        f"📢 Подпишись на канал, чтобы узнать первым: [{CHANNEL_ID}](https://{CHANNEL_ID.replace('@', 't.me/')})",
         parse_mode="Markdown",
         disable_web_page_preview=True
     )
@@ -1987,7 +1981,7 @@ async def help_handler(message: types.Message):
         "4. Оценивай людей (4-5⭐ для симпатии)\n"
         "5. При взаимной симпатии открывается чат\n"
         "6. Поделись юзом в чате через кнопку\n\n"
-        "📢 Подпишись на канал, чтобы быть в ТОПЕ!",
+        f"📢 Подпишись на канал, чтобы быть в ТОПЕ: [{CHANNEL_ID}](https://{CHANNEL_ID.replace('@', 't.me/')})",
         parse_mode="Markdown"
     )
 
@@ -2002,13 +1996,18 @@ async def back_handler(message: types.Message):
 
 
 # ============================================================
-# 22. ОБРАБОТКА ЧАТА
+# 22. ОСНОВНОЙ ОБРАБОТЧИК
 # ============================================================
 
 @dp.message()
 async def handle_messages(message: types.Message, state: FSMContext):
     # Игнорируем команды
     if message.text and message.text.startswith('/'):
+        return
+
+    # Если это кнопка "Найти людей" — обрабатываем отдельно
+    if message.text == "🔎 Найти людей":
+        await find_people(message, state)
         return
 
     # Проверяем активное состояние
@@ -2078,7 +2077,7 @@ async def handle_messages(message: types.Message, state: FSMContext):
             return
 
         # Если не в чате и не в состоянии, игнорируем неизвестные сообщения
-        if message.text and message.text not in ["🔎 Найти людей", "❤️ Симпатии", "👤 Моя анкета", "⭐ Мои звёзды", "📊 Статистика", "⚙️ Настройки", "⭐ PRO", "❓ Помощь", "🛡 Админ-панель", "✏️ Изменить", "⏸ Скрыть анкету", "🔙 Назад"]:
+        if message.text and message.text not in ["❤️ Симпатии", "👤 Моя анкета", "⭐ Мои звёзды", "📊 Статистика", "⚙️ Настройки", "⭐ PRO", "❓ Помощь", "🛡 Админ-панель", "✏️ Изменить", "⏸ Скрыть анкету", "🔙 Назад"]:
             await message.answer("Неизвестная команда. Используй меню.", reply_markup=main_kb(user))
 
 
@@ -2100,12 +2099,37 @@ async def reset_views():
 
 
 # ============================================================
-# 24. ЗАПУСК
+# 24. ВЕБ-СЕРВЕР ДЛЯ ПИНГА (Render Health Check)
+# ============================================================
+
+async def start_web_server():
+    try:
+        from aiohttp import web
+        app = web.Application()
+        app.router.add_get('/', lambda request: web.Response(text="OK"))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+        logger.info("🌐 Web server started on port 8080")
+    except Exception as e:
+        logger.warning(f"⚠️ Web server не запущен: {e}")
+
+
+# ============================================================
+# 25. ЗАПУСК
 # ============================================================
 
 async def main():
     await init_db()
     logger.info("🤖 Бот запущен")
+    
+    # Запускаем веб-сервер для пинга (если aiohttp установлен)
+    try:
+        await start_web_server()
+    except Exception as e:
+        logger.warning(f"⚠️ Веб-сервер не запущен: {e}")
+    
     asyncio.create_task(reset_views())
     await dp.start_polling(bot)
 
